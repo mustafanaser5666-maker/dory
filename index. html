@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f766e">
+<title>دوري - حجز المواعيد</title>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--tx:#1b1f24;--mut:#6b7480;--pri:#0f766e;--pri2:#ccfbf1;--bd:#e3e6ea;--bad:#b42318}
+@media (prefers-color-scheme:dark){:root{--bg:#111418;--card:#1a1f26;--tx:#eceff3;--mut:#9aa4b0;--pri:#2dd4bf;--pri2:#123a36;--bd:#2a313a;--bad:#f97066}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font-family:"Segoe UI",Tahoma,"Noto Sans Arabic",Arial,sans-serif;line-height:1.6;padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom)}
+.wrap{max-width:560px;margin:0 auto;padding:14px}
+h1{font-size:20px;margin:0 0 12px}h2{font-size:16px;margin:0 0 6px}
+.tabs{display:flex;gap:6px;background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:4px;margin-bottom:14px}
+.tabs button{flex:1;border:0;background:none;color:var(--mut);padding:9px;border-radius:9px;font:inherit;font-weight:600;cursor:pointer}
+.tabs button.on{background:var(--pri);color:#fff}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:14px;padding:14px;margin-bottom:12px}
+label{display:block;font-size:13px;color:var(--mut);margin:10px 0 4px}
+input,select{width:100%;padding:11px;border:1px solid var(--bd);border-radius:10px;background:var(--bg);color:var(--tx);font:inherit}
+.slots{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+.slot{padding:9px 0;text-align:center;border:1px solid var(--bd);border-radius:9px;background:var(--bg);color:var(--tx);font:inherit;cursor:pointer}
+.slot.on{background:var(--pri);color:#fff;border-color:var(--pri)}
+.slot:disabled{opacity:.35;text-decoration:line-through;cursor:not-allowed}
+.btn{width:100%;padding:13px;border:0;border-radius:11px;background:var(--pri);color:#fff;font:inherit;font-weight:700;margin-top:14px;cursor:pointer}
+.btn:disabled{opacity:.6}
+.btn.sm{width:auto;padding:6px 12px;margin:0;font-size:13px}
+.btn.ghost{background:var(--pri2);color:var(--pri)}
+.btn.red{background:none;color:var(--bad);border:1px solid var(--bad)}
+.row{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.appt{border-bottom:1px solid var(--bd);padding:10px 0}.appt:last-child{border:0}
+.t{font-weight:700;color:var(--pri)}.mut{color:var(--mut);font-size:13px}
+.ok{background:var(--pri2);color:var(--pri);padding:12px;border-radius:10px;margin-top:12px;font-weight:600}
+.err{color:var(--bad);font-size:13px;margin-top:8px}
+.done{opacity:.5}.empty{text-align:center;color:var(--mut);padding:20px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.link{direction:ltr;text-align:left;font-size:13px;background:var(--bg);border:1px dashed var(--bd);border-radius:8px;padding:8px;word-break:break-all}
+</style>
+</head>
+<body>
+<div class="wrap"><div id="app"></div></div>
+<script>
+var SB="https://zifkgtfwmzpsphdstsew.supabase.co",KEY="sb_publishable_dEsAFjxuNye6zKPm657pxQ_kNtdsFIi";
+var Q=new URLSearchParams(location.search),SLUG=(Q.get("s")||"").toLowerCase(),ADMIN=Q.get("admin")==="1";
+var app=document.getElementById("app"),shop=null,sel={date:"",time:"",svc:"",ok:"",err:""},tab=1,okey="",od="",busy=false;
+function rpc(fn,args){return fetch(SB+"/rest/v1/rpc/"+fn,{method:"POST",headers:{apikey:KEY,Authorization:"Bearer "+KEY,"Content-Type":"application/json"},body:JSON.stringify(args)}).then(function(r){if(!r.ok)throw new Error("net");return r.json()})}
+function iso(d){var z=new Date(d.getTime()-d.getTimezoneOffset()*60000);return z.toISOString().slice(0,10)}
+function esc(s){var d=document.createElement("div");d.textContent=s==null?"":s;return d.innerHTML}
+function ls(k,v){try{if(v===undefined)return localStorage.getItem(k);localStorage.setItem(k,v)}catch(e){return null}}
+function base(){return location.origin+location.pathname}
+function slots(){var a=shop.start_time.split(":"),b=shop.end_time.split(":"),m=+a[0]*60+ +a[1],e=+b[0]*60+ +b[1],o=[];
+while(m<e){o.push(("0"+Math.floor(m/60)).slice(-2)+":"+("0"+m%60).slice(-2));m+=shop.step_min}return o}
+function closed(d){return shop.closed_day>=0&&new Date(d+"T12:00:00").getDay()===shop.closed_day}
+function msg(m){return{ok:"✅ تم الحجز",taken:"هذا الوقت انحجز قبل شوي",invalid:"تأكد من الاسم والرقم والتاريخ",slow_down:"محاولات كثيرة، انتظر دقيقة",no_shop:"المحل غير موجود",slug_taken:"هذا الرابط مستخدم، جرب غيره",weak_key:"الرمز لازم 6 أحرف أو أكثر",bad_slug:"الرابط: أحرف إنكليزية صغيرة وأرقام وشرطة (3-30)"}[m]||"صار خطأ، جرب مرة ثانية"}
+
+/* ---------- Landing ---------- */
+function landing(){
+app.innerHTML='<h1>🗓️ دوري</h1><div class="card"><h2>سوي رابط حجز لمحلك أو عيادتك</h2><div class="mut">الزبون يحجز دوره من الرابط، وانت تشوف جدول يومك من موبايلك.</div>'+
+'<label>اسم المحل / العيادة</label><input id="n"><label>الرابط (إنكليزي)</label><input id="s" dir="ltr" placeholder="dr-ahmed"><label>رمزك السري (6 أحرف أو أكثر، بيه تدخل لوحتك)</label><input id="k" type="password">'+
+'<button class="btn" id="go">إنشاء</button><div class="err" id="e"></div></div>';
+document.getElementById("go").onclick=function(){var n=v("n").trim(),s=v("s").trim().toLowerCase(),k=v("k");if(!n)return;
+this.disabled=true;rpc("dor_create_shop",{p_slug:s,p_name:n,p_key:k}).then(function(r){
+if(r==="ok"){ls("dor_key_"+s,k);location.href=base()+"?s="+s+"&admin=1"}else{document.getElementById("e").textContent=msg(r);document.getElementById("go").disabled=false}
+}).catch(function(){document.getElementById("e").textContent=msg("");document.getElementById("go").disabled=false})}}
+function v(i){return document.getElementById(i).value}
+
+/* ---------- Customer ---------- */
+function loadTaken(){return rpc("dor_taken",{p_slug:SLUG,p_date:sel.date}).then(function(r){shop.taken=r.map(function(x){return x.appt_time})}).catch(function(){shop.taken=[]})}
+function cust(){
+if(!sel.date)sel.date=iso(new Date());if(!sel.svc)sel.svc=shop.services[0];
+var today=iso(new Date()),nowT=new Date().toTimeString().slice(0,5);
+var h='<h1>🗓️ '+esc(shop.name)+'</h1><div class="card"><label>الخدمة</label><select id="sv">'+shop.services.map(function(s){return'<option '+(s===sel.svc?"selected":"")+'>'+esc(s)+'</option>'}).join("")+'</select>'+
+'<label>التاريخ</label><input id="dt" type="date" min="'+today+'" value="'+sel.date+'">';
+if(closed(sel.date))h+='<div class="empty">هذا اليوم عطلة</div>';
+else h+='<label>الوقت</label><div class="slots">'+slots().map(function(t){var d=(shop.taken||[]).indexOf(t)>-1||(sel.date===today&&t<nowT);
+return'<button class="slot '+(sel.time===t?"on":"")+'" data-t="'+t+'" '+(d?"disabled":"")+'>'+t+'</button>'}).join("")+'</div>';
+h+='<label>الاسم</label><input id="nm" placeholder="الاسم الثلاثي" value="'+esc(ls("dor_nm")||"")+'"><label>رقم الموبايل</label><input id="ph" type="tel" inputmode="tel" placeholder="07xxxxxxxxx" value="'+esc(ls("dor_ph")||"")+'">'+
+'<button class="btn" id="bk" '+(busy?"disabled":"")+'>تأكيد الحجز</button>'+(sel.err?'<div class="err">'+esc(sel.err)+'</div>':'')+(sel.ok?'<div class="ok">✅ تم الحجز: '+esc(sel.ok)+'<br><span class="mut">احتفظ بالموعد، وإذا تحتاج تلغي كلم المحل.</span></div>':'')+'</div>';
+app.innerHTML=h;
+document.getElementById("sv").onchange=function(){sel.svc=this.value};
+document.getElementById("dt").onchange=function(){sel.date=this.value;sel.time="";sel.ok=sel.err="";loadTaken().then(cust)};
+[].forEach.call(document.querySelectorAll(".slot"),function(b){b.onclick=function(){sel.time=b.dataset.t;sel.ok=sel.err="";cust()}});
+document.getElementById("bk").onclick=function(){var n=v("nm").trim(),p=v("ph").trim();sel.err="";
+if(!sel.time){sel.err="اختار الوقت";return cust()}
+busy=true;cust();ls("dor_nm",n);ls("dor_ph",p);
+rpc("dor_book",{p_slug:SLUG,p_date:sel.date,p_time:sel.time,p_svc:sel.svc,p_name:n,p_phone:p}).then(function(r){busy=false;
+if(r==="ok"){sel.ok=sel.date+" الساعة "+sel.time;sel.time=""}else sel.err=msg(r);return loadTaken()}).catch(function(){busy=false;sel.err=msg("")}).then(cust)}}
+
+/* ---------- Owner ---------- */
+function loginView(bad){app.innerHTML='<h1>🔐 لوحة الصاحب</h1><div class="card"><label>الرمز السري</label><input id="k" type="password">'+(bad?'<div class="err">الرمز غلط</div>':'')+'<button class="btn" id="go">دخول</button></div>';
+document.getElementById("go").onclick=function(){okey=v("k");ownerLoad(true)}}
+function ownerLoad(first){if(!od)od=iso(new Date());
+rpc("dor_owner_list",{p_slug:SLUG,p_key:okey,p_date:od}).then(function(r){
+if(!r.length&&first){return rpc("dor_owner_update",{p_slug:SLUG,p_key:okey,p_name:shop.name,p_start:shop.start_time,p_end:shop.end_time,p_step:shop.step_min,p_closed:shop.closed_day,p_services:shop.services}).then(function(ok){if(!ok)return loginView(true);ls("dor_key_"+SLUG,okey);owner([])})}
+ls("dor_key_"+SLUG,okey);owner(r)}).catch(function(){app.innerHTML='<div class="empty">ما كدرت أتصل، جرب مرة ثانية</div>'})}
+function owner(list){
+var link=base()+"?s="+SLUG,wait=list.filter(function(x){return x.status==="wait"}).length;
+var h='<h1>🗓️ '+esc(shop.name)+'</h1><div class="tabs"><button class="'+(tab===1?"on":"")+'" data-t="1">جدول اليوم</button><button class="'+(tab===2?"on":"")+'" data-t="2">الإعدادات</button></div>';
+if(tab===1){
+h+='<div class="card"><label>رابط الحجز للزبائن</label><div class="link">'+esc(link)+'</div><div class="row" style="margin-top:8px"><button class="btn sm ghost" id="cp">نسخ</button><a class="btn sm ghost" style="text-decoration:none" target="_blank" href="https://wa.me/?text='+encodeURIComponent("احجز دورك من هنا: "+link)+'">مشاركة واتساب</a></div></div>'+
+'<div class="card"><label>اليوم</label><input id="od" type="date" value="'+od+'"><div class="mut" style="margin-top:8px">'+list.length+' موعد • '+wait+' بالانتظار</div></div><div class="card">'+
+(list.length?list.map(function(x){var ph=x.cust_phone.replace(/\D/g,"").replace(/^0/,"964");
+return'<div class="appt '+(x.status!=="wait"?"done":"")+'"><div class="row"><span><span class="t">'+esc(x.appt_time)+'</span> — '+esc(x.cust_name)+'</span><span class="mut">'+esc(x.svc)+'</span></div><div class="row" style="margin-top:6px"><span><a class="mut" href="tel:'+esc(x.cust_phone)+'">'+esc(x.cust_phone)+'</a> • <a class="mut" target="_blank" href="https://wa.me/'+ph+'">واتساب</a></span><span style="display:flex;gap:6px">'+
+(x.status==="wait"?'<button class="btn sm ghost" data-id="'+x.id+'" data-s="done">خلص</button><button class="btn sm red" data-id="'+x.id+'" data-s="cancel">إلغاء</button>':'<span class="mut">'+(x.status==="done"?"تم":"ملغي")+'</span>')+'</span></div></div>'}).join(""):'<div class="empty">ماكو مواعيد</div>')+'</div>';
+}else{
+var days=["الأحد","الاثنين","الثلاثاء","الأربعاء","الخميس","الجمعة","السبت"];
+h+='<div class="card"><label>اسم المحل / العيادة</label><input id="c1" value="'+esc(shop.name)+'"><div class="grid2"><div><label>بداية الدوام</label><input id="c2" type="time" value="'+shop.start_time+'"></div><div><label>نهاية الدوام</label><input id="c3" type="time" value="'+shop.end_time+'"></div></div>'+
+'<div class="grid2"><div><label>مدة الموعد</label><select id="c4">'+[10,15,20,30,45,60].map(function(m){return'<option value="'+m+'" '+(m===shop.step_min?"selected":"")+'>'+m+' دقيقة</option>'}).join("")+'</select></div><div><label>يوم العطلة</label><select id="c5"><option value="-1" '+(shop.closed_day<0?"selected":"")+'>بدون</option>'+days.map(function(d,i){return'<option value="'+i+'" '+(i===shop.closed_day?"selected":"")+'>'+d+'</option>'}).join("")+'</select></div></div>'+
+'<label>الخدمات (فاصلة بينها)</label><input id="c6" value="'+esc(shop.services.join("، "))+'"><button class="btn" id="sv">حفظ</button><div class="ok" id="sm" style="display:none">انحفظ ✅</div></div>'+
+'<div class="card"><h2>إشعارات التلجرام</h2><div class="mut">تصلك رسالة بكل حجز جديد. افتح البوت واضغط Start، وجيب رقمك (Chat ID) من @userinfobot.</div><label>Chat ID</label><input id="tg" dir="ltr" inputmode="numeric"><div class="row" style="margin-top:12px"><button class="btn sm" id="tgs">حفظ</button><button class="btn sm ghost" id="tgt">إرسال تجربة</button></div><div class="mut" id="tgm" style="margin-top:8px"></div></div>';}
+app.innerHTML=h;if(tab===2)tgInit();
+[].forEach.call(document.querySelectorAll(".tabs button"),function(b){b.onclick=function(){tab=+b.dataset.t;ownerLoad()}});
+if(tab===1){document.getElementById("cp").onclick=function(){try{navigator.clipboard.writeText(link);this.textContent="اننسخ ✓"}catch(e){}};
+document.getElementById("od").onchange=function(){od=this.value;ownerLoad()};
+[].forEach.call(document.querySelectorAll("[data-id]"),function(b){b.onclick=function(){b.disabled=true;rpc("dor_owner_status",{p_slug:SLUG,p_key:okey,p_id:b.dataset.id,p_status:b.dataset.s}).then(function(){ownerLoad()})}})}
+else document.getElementById("sv").onclick=function(){var sv=v("c6").split(/[,،]/).map(function(s){return s.trim()}).filter(Boolean);if(!sv.length)sv=["كشف"];
+var nn={p_slug:SLUG,p_key:okey,p_name:v("c1")||shop.name,p_start:v("c2"),p_end:v("c3"),p_step:+v("c4"),p_closed:+v("c5"),p_services:sv};
+rpc("dor_owner_update",nn).then(function(ok){if(ok){shop.name=nn.p_name;shop.start_time=nn.p_start;shop.end_time=nn.p_end;shop.step_min=nn.p_step;shop.closed_day=nn.p_closed;shop.services=sv;document.getElementById("sm").style.display="block"}})}}
+
+function tgInit(){var m=document.getElementById("tgm");
+rpc("dor_owner_get_tg",{p_slug:SLUG,p_key:okey}).then(function(r){document.getElementById("tg").value=r||""}).catch(function(){});
+document.getElementById("tgs").onclick=function(){rpc("dor_owner_set_tg",{p_slug:SLUG,p_key:okey,p_chat:v("tg")}).then(function(ok){m.textContent=ok?"انحفظ ✅":"ما انحفظ"}).catch(function(){m.textContent="خطأ بالاتصال"})};
+document.getElementById("tgt").onclick=function(){rpc("dor_owner_set_tg",{p_slug:SLUG,p_key:okey,p_chat:v("tg")}).then(function(){return rpc("dor_owner_test_tg",{p_slug:SLUG,p_key:okey})}).then(function(ok){m.textContent=ok?"انرسلت رسالة تجربة، شيك التلجرام":"اكتب الـ Chat ID أول"}).catch(function(){m.textContent="خطأ بالاتصال"})}}
+
+/* ---------- Boot ---------- */
+if(!SLUG)landing();
+else rpc("dor_get_shop",{p_slug:SLUG}).then(function(r){
+if(!r.length){app.innerHTML='<div class="empty">هذا المحل غير موجود</div>';return}
+shop=r[0];document.title=shop.name+" - دوري";
+if(ADMIN){okey=ls("dor_key_"+SLUG)||"";if(okey)ownerLoad(true);else loginView(false)}
+else{sel.date=iso(new Date());loadTaken().then(cust)}
+}).catch(function(){app.innerHTML='<div class="empty">ما كدرت أتصل، جرب مرة ثانية</div>'});
+</script>
+</body>
+</html>
