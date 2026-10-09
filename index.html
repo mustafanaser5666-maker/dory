@@ -4,6 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0f766e">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon.svg">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
 <title>دوري - حجز المواعيد</title>
 <style>
 :root{--bg:#f6f7f9;--card:#fff;--tx:#1b1f24;--mut:#6b7480;--pri:#0f766e;--pri2:#ccfbf1;--bd:#e3e6ea;--bad:#b42318}
@@ -92,7 +97,7 @@ document.getElementById("go").onclick=function(){okey=v("k");ownerLoad(true)}}
 function ownerLoad(first){if(!od)od=iso(new Date());
 rpc("dor_owner_list",{p_slug:SLUG,p_key:okey,p_date:od}).then(function(r){
 if(!r.length&&first){return rpc("dor_owner_update",{p_slug:SLUG,p_key:okey,p_name:shop.name,p_start:shop.start_time,p_end:shop.end_time,p_step:shop.step_min,p_closed:shop.closed_day,p_services:shop.services}).then(function(ok){if(!ok)return loginView(true);ls("dor_key_"+SLUG,okey);owner([])})}
-ls("dor_key_"+SLUG,okey);owner(r)}).catch(function(){app.innerHTML='<div class="empty">ما كدرت أتصل، جرب مرة ثانية</div>'})}
+ls("dor_key_"+SLUG,okey);ls("dor_last",SLUG);owner(r)}).catch(function(){app.innerHTML='<div class="empty">ما كدرت أتصل، جرب مرة ثانية</div>'})}
 function owner(list){
 var link=base()+"?s="+SLUG,wait=list.filter(function(x){return x.status==="wait"}).length;
 var h='<h1>🗓️ '+esc(shop.name)+'</h1><div class="tabs"><button class="'+(tab===1?"on":"")+'" data-t="1">جدول اليوم</button><button class="'+(tab===2?"on":"")+'" data-t="2">الإعدادات</button></div>';
@@ -123,7 +128,9 @@ document.getElementById("tgs").onclick=function(){rpc("dor_owner_set_tg",{p_slug
 document.getElementById("tgt").onclick=function(){rpc("dor_owner_set_tg",{p_slug:SLUG,p_key:okey,p_chat:v("tg")}).then(function(){return rpc("dor_owner_test_tg",{p_slug:SLUG,p_key:okey})}).then(function(ok){m.textContent=ok?"انرسلت رسالة تجربة، شيك التلجرام":"اكتب الـ Chat ID أول"}).catch(function(){m.textContent="خطأ بالاتصال"})}}
 
 /* ---------- Boot ---------- */
-if(!SLUG)landing();
+if(!SLUG){var last=ls("dor_last");if(last&&ls("dor_key_"+last))location.replace(base()+"?s="+last+"&admin=1");else landing()}
+if("serviceWorker" in navigator)window.addEventListener("load",function(){navigator.serviceWorker.register("sw.js").catch(function(){})});
+if(!SLUG){}
 else rpc("dor_get_shop",{p_slug:SLUG}).then(function(r){
 if(!r.length){app.innerHTML='<div class="empty">هذا المحل غير موجود</div>';return}
 shop=r[0];document.title=shop.name+" - دوري";
